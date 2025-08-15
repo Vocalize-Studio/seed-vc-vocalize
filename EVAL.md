@@ -5,15 +5,12 @@ For ease of reproduction, source audios are 100 random utterances from LibriTTS-
 Source audios can be found under `./examples/libritts-test-clean` <br>
 Reference audios can be found under `./examples/reference` <br>
 
-We evaluate the conversion results in terms of speaker embedding cosine similarity (SECS), word error rate (WER) and character error rate (CER) and compared
-our results with two strong open sourced baselines, namely [OpenVoice](https://github.com/myshell-ai/OpenVoice) and [CosyVoice](https://github.com/FunAudioLLM/CosyVoice).  
-Results in the table below shows that our Seed-VC model significantly outperforms the baseline models in both intelligibility and speaker similarity.<br>
+We evaluate the conversion results in terms of speaker embedding cosine similarity (SECS), word error rate (WER) and character error rate (CER).<br>
+Results in the table below shows that our Seed-VC model is able to achieve high intelligibility and speaker similarity.<br>
 
 | Models\Metrics | SECS↑      | WER↓      | CER↓     | SIG↑     | BAK↑     | OVRL↑    |
 |----------------|------------|-----------|----------|----------|----------|----------|
 | Ground Truth   | 1.0000     | 8.02      | 1.57     | ~        | ~        | ~        |
-| OpenVoice      | 0.7547     | 15.46     | 4.73     | **3.56** | **4.02** | **3.27** |
-| CosyVoice      | 0.8440     | 18.98     | 7.29     | 3.51     | **4.02** | 3.21     |
 | Seed-VC(Ours)  | **0.8676** | **11.99** | **2.92** | 3.42     | 3.97     | 3.11     |
 
 We have also compared with non-zero-shot voice conversion models for several speakers (based on model availability):
@@ -47,10 +44,7 @@ python eval.py
 --length-adjust 1.0
 --inference-cfg-rate 0.7
 --xvector-extractor "resemblyzer"
---baseline ""  # fill in openvoice or cosyvoice to compute baseline result
 --max-samples 100  # max source utterances to go through
-```
-Before that, make sure you have openvoice and cosyvoice repo correctly installed on `../OpenVoice/` and `../CosyVoice/` if you would like to run baseline evaluation.
 
 ### Zero-shot singing voice conversion🎤🎶
 

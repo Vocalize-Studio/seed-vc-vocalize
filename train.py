@@ -62,7 +62,6 @@ class Trainer:
         self.build_semantic_fn(device, config)
         if self.f0_condition:
             self.build_f0_fn(device, config)
-        self.build_converter(device, config)
         self.build_vocoder(device, config)
 
         scheduler_params = {
@@ -133,14 +132,7 @@ class Trainer:
         self.rmvpe = RMVPE(model_path, is_half=False, device=device)
         self.f0_fn = self.rmvpe
 
-    def build_converter(self, device, config):
-        from modules.openvoice.api import ToneColorConverter
-        ckpt_converter, config_converter = load_custom_model_from_hf("myshell-ai/OpenVoiceV2", "converter/checkpoint.pth", "converter/config.json")
-        self.tone_color_converter = ToneColorConverter(config_converter, device=device)
-        self.tone_color_converter.load_ckpt(ckpt_converter)
-        self.tone_color_converter.model.eval()
-        se_db_path = load_custom_model_from_hf("Plachta/Seed-VC", "se_db.pt", None)
-        self.se_db = torch.load(se_db_path, map_location='cpu')
+    
 
     def build_vocoder(self, device, config):
         vocoder_type = config['model_params']['vocoder']['type']
@@ -155,10 +147,9 @@ class Trainer:
             from modules.hifigan.generator import HiFTGenerator
             from modules.hifigan.f0_predictor import ConvRNNF0Predictor
             hift_config = yaml.safe_load(open('configs/hifigan.yml', 'r'))
-            hift_path = load_custom_model_from_hf("FunAudioLLM/CosyVoice-300M", 'hift.pt', None)
             self.hift_gen = HiFTGenerator(**hift_config['hift'],
                                           f0_predictor=ConvRNNF0Predictor(**hift_config['f0_predictor']))
-            self.hift_gen.load_state_dict(torch.load(hift_path, map_location='cpu'))
+            self.hift_gen.load_state_dict(torch.load(hift_config['pretrained_model_path'], map_location='cpu'))
             self.hift_gen.eval()
             self.hift_gen.to(device)
             vocoder_fn = self.hift_gen
@@ -167,7 +158,7 @@ class Trainer:
         self.vocoder_fn = vocoder_fn
 
     def build_semantic_fn(self, device, config):
-        speech_tokenizer_type = config['model_params']['speech_tokenizer'].get('type', 'cosyvoice')
+        speech_tokenizer_type = config['model_params']['speech_tokenizer'].get('type')
         if speech_tokenizer_type == 'whisper':
             from transformers import AutoFeatureExtractor, WhisperModel
             whisper_model_name = config['model_params']['speech_tokenizer']['name']
@@ -231,7 +222,7 @@ class Trainer:
             raise ValueError(f"Unsupported speech tokenizer type: {speech_tokenizer_type}")
         self.semantic_fn = semantic_fn
 
-    def train_one_step(self, batch):
+    '''    def train_one_step(self, batch):
         waves, mels, wave_lengths, mel_input_length = batch
 
         B = waves.size(0)
@@ -239,35 +230,11 @@ class Trainer:
         target = mels
         target_lengths = mel_input_length
 
-        # get speaker embedding
-        if self.sr != 22050:
-            waves_22k = torchaudio.functional.resample(waves, self.sr, 22050)
-            wave_lengths_22k = (wave_lengths.float() * 22050 / self.sr).long()
-        else:
-            waves_22k = waves
-            wave_lengths_22k = wave_lengths
-        se_batch = self.tone_color_converter.extract_se(waves_22k, wave_lengths_22k)
-
-        ref_se_idx = torch.randint(0, len(self.se_db), (B,))
-        ref_se = self.se_db[ref_se_idx].to(self.device)
-
-        # convert
-        converted_waves_22k = self.tone_color_converter.convert(
-            waves_22k, wave_lengths_22k, se_batch, ref_se
-        ).squeeze(1)
-
-        if self.sr != 22050:
-            converted_waves = torchaudio.functional.resample(converted_waves_22k, 22050, self.sr)
-        else:
-            converted_waves = converted_waves_22k
-
         waves_16k = torchaudio.functional.resample(waves, self.sr, 16000)
         wave_lengths_16k = (wave_lengths.float() * 16000 / self.sr).long()
-        converted_waves_16k = torchaudio.functional.resample(converted_waves, self.sr, 16000)
 
-        # extract S_alt (perturbed speech tokens)
+        # extract S_ori
         S_ori = self.semantic_fn(waves_16k)
-        S_alt = self.semantic_fn(converted_waves_16k)
 
         if self.f0_condition:
             F0_ori = self.rmvpe.infer_from_audio_batch(waves_16k)
@@ -275,27 +242,14 @@ class Trainer:
             F0_ori = None
 
         # interpolate speech token to match acoustic feature length
-        alt_cond, _, alt_codes, alt_commitment_loss, alt_codebook_loss = (
-            self.model.length_regulator(S_alt, ylens=target_lengths, f0=F0_ori)
-        )
         ori_cond, _, ori_codes, ori_commitment_loss, ori_codebook_loss = (
             self.model.length_regulator(S_ori, ylens=target_lengths, f0=F0_ori)
         )
-        if alt_commitment_loss is None:
-            alt_commitment_loss = 0
-            alt_codebook_loss = 0
+        if ori_commitment_loss is None:
             ori_commitment_loss = 0
             ori_codebook_loss = 0
 
-        # randomly set a length as prompt
-        prompt_len_max = target_lengths - 1
-        prompt_len = (torch.rand([B], device=alt_cond.device) * prompt_len_max).floor().long()
-        prompt_len[torch.rand([B], device=alt_cond.device) < 0.1] = 0
-
-        # for prompt cond token, use ori_cond instead of alt_cond
-        cond = alt_cond.clone()
-        for bib in range(B):
-            cond[bib, :prompt_len[bib]] = ori_cond[bib, :prompt_len[bib]]
+        cond = ori_cond
 
         # diffusion target
         common_min_len = min(target_size, cond.size(1))
@@ -322,12 +276,12 @@ class Trainer:
                 y_list.append(y)
         y = torch.cat(y_list, dim=0)
 
-        loss, _ = self.model.cfm(x, target_lengths, prompt_len, cond, y)
+        loss, _ = self.model.cfm(x, target_lengths, 0, cond, y) # prompt_len is 0
 
         loss_total = (
             loss +
-            (alt_commitment_loss + ori_commitment_loss) * 0.05 +
-            (ori_codebook_loss + alt_codebook_loss) * 0.15
+            ori_commitment_loss * 0.05 +
+            ori_codebook_loss * 0.15
         )
 
         self.optimizer.zero_grad()
@@ -339,7 +293,7 @@ class Trainer:
         self.optimizer.scheduler(key='cfm')
         self.optimizer.scheduler(key='length_regulator')
 
-        return loss.detach().item()
+        return loss.detach().item()''
 
     def train_one_epoch(self):
         _ = [self.model[key].train() for key in self.model]

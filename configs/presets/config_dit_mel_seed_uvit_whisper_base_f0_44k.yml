@@ -25,9 +25,7 @@ model_params:
   dit_type: "DiT" # uDiT or DiT
   reg_loss_type: "l1" # l1 or l2
 
-  timbre_shifter:
-    se_db_path: "./modules/openvoice/checkpoints_v2/converter/se_db.pt"
-    ckpt_path: './modules/openvoice/checkpoints_v2/converter'
+  
 
   vocoder:
     type: "bigvgan"

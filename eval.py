@@ -282,7 +282,6 @@ def main(args):
     diffusion_steps = args.diffusion_steps
     length_adjust = args.length_adjust
     inference_cfg_rate = args.inference_cfg_rate
-    baseline = args.baseline
     max_samples = args.max_samples
     try:
         source_audio_list = open(osp.join(source_dir, "index.tsv"), "r").readlines()
@@ -292,8 +291,6 @@ def main(args):
     target_audio_list = os.listdir(target_dir)
 
     conversion_result_dir = args.output
-    if baseline:
-        conversion_result_dir = os.path.join(conversion_result_dir, baseline)
     os.makedirs(conversion_result_dir, exist_ok=True)
 
     similarity_list = []
@@ -320,29 +317,22 @@ def main(args):
                 ref_waves_16k, _ = librosa.load(target_path, sr=16000)
                 ref_waves_16k = torch.tensor(ref_waves_16k).unsqueeze(0)
             else:
-                if baseline == "openvoice":
-                    from baselines.openvoice import convert as openvoice_convert
-                    ref_waves_16k, vc_wave_16k = openvoice_convert(source_path, target_path, "temp.wav")
-                elif baseline == "cosyvoice":
-                    from baselines.cosyvoice import convert as cosyvoice_convert
-                    ref_waves_16k, vc_wave_16k = cosyvoice_convert(source_path, target_path, "temp.wav")
-                else:
-                    ref_waves_16k, vc_wave = convert(
-                        source_path,
-                        target_path,
-                        model,
-                        semantic_fn,
-                        vocoder_fn,
-                        campplus_model,
-                        to_mel,
-                        mel_fn_args,
-                        sr,
-                        length_adjust,
-                        diffusion_steps,
-                        inference_cfg_rate,
-                        remove_prompt=args.remove_prompt,
-                    )
-                    vc_wave_16k = torchaudio.functional.resample(vc_wave, sr, 16000)
+                ref_waves_16k, vc_wave = convert(
+                    source_path,
+                    target_path,
+                    model,
+                    semantic_fn,
+                    vocoder_fn,
+                    campplus_model,
+                    to_mel,
+                    mel_fn_args,
+                    sr,
+                    length_adjust,
+                    diffusion_steps,
+                    inference_cfg_rate,
+                    remove_prompt=args.remove_prompt,
+                )
+                vc_wave_16k = torchaudio.functional.resample(vc_wave, sr, 16000)
                 os.makedirs(osp.join(conversion_result_dir, source_index), exist_ok=True)
                 torchaudio.save(
                     osp.join(conversion_result_dir, source_index, f"{target_name}"),
@@ -549,7 +539,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--xvector-extractor", type=str, default="wavlm-large"
     )  # wavlm or resemblyzer
-    parser.add_argument("--baseline", type=str, default="") # use "" for Seed-VC
     parser.add_argument("--max-samples", type=int, default=20)
     parser.add_argument("--remove-prompt", type=bool, default=False)
     args = parser.parse_args()
