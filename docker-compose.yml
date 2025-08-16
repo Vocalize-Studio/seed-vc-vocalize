@@ -63,7 +63,7 @@ services:
     image: dpage/pgadmin4:latest
     container_name: svc-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@ex.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
       # Booleans must be Python True/False (no quotes)
       # PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: True
@@ -75,7 +75,6 @@ services:
       - "127.0.0.1:5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     depends_on:
       - postgres
     restart: unless-stopped
