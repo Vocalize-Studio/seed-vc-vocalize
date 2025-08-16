@@ -13,6 +13,7 @@ import tempfile
 from typing import Optional
 
 import aio_pika
+import asyncpg
 import signal
 from contextlib import suppress
 import aiormq
@@ -32,7 +33,8 @@ from loguru import logger # Using loguru for MinIO helpers
 # Configuration from Environment
 # -----------------------------
 # RabbitMQ
-RMQ_URL = os.getenv("RMQ_URL", "amqp://guest:guest@localhost:5672/")
+RMQ_URL = os.getenv("RMQ_URL", "amqp://guest:guest@localhost:5673/")
+DB_URL = os.getenv("DATABASE_URL", "postgresql://vocalize:postgres@localhost/vocalize")
 SVC_QUEUE = os.getenv("SVC_QUEUE", "svc.jobs")
 CTRL_QUEUE = os.getenv("CTRL_QUEUE", "conversion.control")
 EVENTS_EX = os.getenv("EVENTS_EX", "conversion.events")
@@ -191,12 +193,19 @@ class SVCWorker:
         self._conn: Optional[aio_pika.RobustConnection] = None
         self._ch: Optional[aio_pika.RobustChannel] = None
         self._cancel_task: Optional[asyncio.Task] = None
+        self._db_pool = None
+
+    async def _get_db_pool(self):
+        if self._db_pool is None:
+            self._db_pool = await asyncpg.create_pool(DB_URL)
+        return self._db_pool
 
     async def run(self):
         logger.info("Connecting to RabbitMQ: {}", RMQ_URL)
         self._conn = await aio_pika.connect_robust(RMQ_URL)
         self._ch = await self._conn.channel()
         await self._ch.set_qos(prefetch_count=1)
+        self._db_pool = await self._get_db_pool()
 
         logger.info("Declaring topology …")
         await self._ch.declare_queue(SVC_QUEUE, durable=True)
@@ -235,6 +244,16 @@ class SVCWorker:
                             logger.info("📤 Finished job {}", job_id)
                         except Exception as e:
                             logger.exception("❌ Job {} failed: {}", job_id, e)
+                            db_pool = await self._get_db_pool()
+                            async with db_pool.acquire() as db_conn:
+                                await db_conn.execute(
+                                    "UPDATE jobs SET status = 'error', stage = 'failed', finished_at = now() WHERE id = $1",
+                                    uuid.UUID(job_id)
+                                )
+                                await db_conn.execute(
+                                    "UPDATE generation_metadata SET status = 'error', finished_at = now() WHERE job_id = $1",
+                                    uuid.UUID(job_id)
+                                )
                             await self._publish(events_ex, job_id, "error", {
                                 "code": "INTERNAL", "message": str(e), "where": "svc",
                             })
@@ -327,6 +346,20 @@ class SVCWorker:
 
     async def _process_job(self, ex: aio_pika.Exchange, job_id: str, p: dict):
         cancel_ev = self.cancel_flags[job_id]
+        db_pool = await self._get_db_pool()
+
+        async with db_pool.acquire() as db_conn:
+            await db_conn.execute(
+                "UPDATE jobs SET status = 'running', stage = 'svc' WHERE id = $1",
+                uuid.UUID(job_id)
+            )
+            await db_conn.execute(
+                """
+                INSERT INTO generation_metadata (job_id, model, status)
+                VALUES ($1, 'seed-vc-v2', 'running')
+                """,
+                uuid.UUID(job_id)
+            )
 
         # Progress callback → publish to events exchange
         last_timings = None
@@ -477,6 +510,15 @@ class SVCWorker:
             await self._publish(ex, job_id, "error", {
                 "code":"CANCELLED", "message":"cancelled by user", "where":"svc"
             })
+            async with db_pool.acquire() as db_conn:
+                await db_conn.execute(
+                    "UPDATE jobs SET status = 'cancelled', stage = 'cancelled', finished_at = now() WHERE id = $1",
+                    uuid.UUID(job_id)
+                )
+                await db_conn.execute(
+                    "UPDATE generation_metadata SET status = 'cancelled', finished_at = now() WHERE job_id = $1",
+                    uuid.UUID(job_id)
+                )
             return
 
         # ---------- continue with your MinIO upload & done event ----------
@@ -486,9 +528,30 @@ class SVCWorker:
         if wave is None:
             logger.warning("No final waveform received; upload skipped.")
             audio_uri = ""
+            async with db_pool.acquire() as db_conn:
+                await db_conn.execute(
+                    "UPDATE jobs SET status = 'error', stage = 'failed', finished_at = now() WHERE id = $1",
+                    uuid.UUID(job_id)
+                )
+                await db_conn.execute(
+                    "UPDATE generation_metadata SET status = 'error', finished_at = now() WHERE job_id = $1",
+                    uuid.UUID(job_id)
+                )
         else:
             write_final_wave(audio_path, int(sr), wave)
             audio_uri = upload_file_to_minio(audio_path, job_id, content_type="audio/wav")
+            async with db_pool.acquire() as db_conn:
+                await db_conn.execute(
+                    """
+                    UPDATE jobs SET status = 'success', stage = 'completed', finished_at = now(), vocal_uri = $2
+                    WHERE id = $1
+                    """,
+                    uuid.UUID(job_id), audio_uri
+                )
+                await db_conn.execute(
+                    "UPDATE generation_metadata SET status = 'success', finished_at = now(), gen_uri = $2 WHERE job_id = $1",
+                    uuid.UUID(job_id), audio_uri
+                )
 
         # 4) DONE (send MinIO URI)
         await self._publish(ex, job_id, "done", {

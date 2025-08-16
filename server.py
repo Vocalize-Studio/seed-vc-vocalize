@@ -1,6 +1,7 @@
 # server.py
 import asyncio, json, uuid
 import aio_pika
+import asyncpg
 import grpc
 from proto import converter_pb2 as pb
 from proto import converter_pb2_grpc as api
@@ -12,7 +13,8 @@ import aiofiles
 from minio import Minio
 from minio.error import S3Error
 
-RMQ_URL = "amqp://guest:guest@localhost/"
+RMQ_URL = "amqp://guest:guest@localhost:5673/"
+DB_URL = os.getenv("DATABASE_URL", "postgresql://vocalize:postgres@localhost/vocalize")
 EVENTS_EX = "conversion.events"
 SVC_QUEUE = "svc.jobs"
 CTRL_QUEUE = "conversion.control"
@@ -33,6 +35,7 @@ def ts_now():
 class ConverterServicer(api.ConverterServicer):
     def __init__(self):
         self._conn = None
+        self._db_pool = None
 
     async def _conn_ch(self):
         if self._conn is None:
@@ -41,9 +44,33 @@ class ConverterServicer(api.ConverterServicer):
         await ch.set_qos(prefetch_count=32)
         return ch
 
+    async def _get_db_pool(self):
+        if self._db_pool is None:
+            self._db_pool = await asyncpg.create_pool(DB_URL)
+        return self._db_pool
+
     async def Convert(self, request, context):
         job_id = str(uuid.uuid4())
         ch = await self._conn_ch()
+        db_pool = await self._get_db_pool()
+
+        async with db_pool.acquire() as db_conn:
+            # For now, we'll create a dummy user if one doesn't exist.
+            # In a real app, you'd get the user_id from the request context (e.g., from a JWT).
+            user_id = await db_conn.fetchval("SELECT id FROM users WHERE email = 'jiro@example.com'")
+            if not user_id:
+                user_id = await db_conn.fetchval(
+                    "INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id",
+                    'jiro@example.com', 'Jiro'
+                )
+
+            await db_conn.execute(
+                """
+                INSERT INTO jobs (id, user_id, reference_uri, vocal_uri, stage, status)
+                VALUES ($1, $2, $3, $4, 'queued', 'pending')
+                """,
+                uuid.UUID(job_id), user_id, request.target_uri, request.source_uri
+            )
 
         events_ex = await ch.declare_exchange(EVENTS_EX, aio_pika.ExchangeType.TOPIC, durable=True)
         await ch.declare_queue(SVC_QUEUE, durable=True)
@@ -161,6 +188,17 @@ class ConverterServicer(api.ConverterServicer):
 
     async def Cancel(self, request, context):
         ch = await self._conn_ch()
+        db_pool = await self._get_db_pool()
+
+        async with db_pool.acquire() as db_conn:
+            await db_conn.execute(
+                """
+                UPDATE jobs SET status = 'cancelled', stage = 'cancelled', finished_at = now()
+                WHERE id = $1
+                """,
+                uuid.UUID(request.id)
+            )
+
         await self._cancel_job(ch, request.id)
         return Empty()
 
