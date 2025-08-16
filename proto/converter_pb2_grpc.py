@@ -45,6 +45,11 @@ class ConverterStub(object):
                 request_serializer=converter__pb2.JobId.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
+        self.Download = channel.unary_stream(
+                '/vc.v1.Converter/Download',
+                request_serializer=converter__pb2.DownloadRequest.SerializeToString,
+                response_deserializer=converter__pb2.DownloadChunk.FromString,
+                _registered_method=True)
 
 
 class ConverterServicer(object):
@@ -62,6 +67,13 @@ class ConverterServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Download(self, request, context):
+        """New RPC
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ConverterServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -74,6 +86,11 @@ def add_ConverterServicer_to_server(servicer, server):
                     servicer.Cancel,
                     request_deserializer=converter__pb2.JobId.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'Download': grpc.unary_stream_rpc_method_handler(
+                    servicer.Download,
+                    request_deserializer=converter__pb2.DownloadRequest.FromString,
+                    response_serializer=converter__pb2.DownloadChunk.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -130,6 +147,33 @@ class Converter(object):
             '/vc.v1.Converter/Cancel',
             converter__pb2.JobId.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Download(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/vc.v1.Converter/Download',
+            converter__pb2.DownloadRequest.SerializeToString,
+            converter__pb2.DownloadChunk.FromString,
             options,
             channel_credentials,
             insecure,

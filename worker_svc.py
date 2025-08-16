@@ -283,12 +283,24 @@ class SVCWorker:
         logger.info("Shutting down …")
         self._stop.set()
 
-        # Stop background tasks
-        for t in (self._idle_task, self._cancel_task):
-            if t and not t.done():
-                t.cancel()
-                with suppress(Exception):
-                    await t
+        # Stop background tasks (idle heartbeat, cancel listener)
+        tasks_to_cancel = []
+        if self._idle_task and not self._idle_task.done():
+            tasks_to_cancel.append(self._idle_task)
+        if self._cancel_task and not self._cancel_task.done():
+            tasks_to_cancel.append(self._cancel_task)
+
+        for t in tasks_to_cancel:
+            t.cancel()
+
+        # Wait for tasks to finish with a timeout
+        if tasks_to_cancel:
+            done, pending = await asyncio.wait(tasks_to_cancel, timeout=5) # 5 second timeout
+            for t in pending:
+                logger.warning("Task {} did not shut down gracefully and is still pending.", t.get_name() if hasattr(t, 'get_name') else t)
+                t.cancel() # Force cancel if still pending
+                with suppress(asyncio.CancelledError):
+                    await t # Await again to ensure it's truly cancelled
 
         # Close channel/connection last
         with suppress(Exception):

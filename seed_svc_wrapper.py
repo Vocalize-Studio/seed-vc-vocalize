@@ -14,6 +14,7 @@ from transformers import AutoFeatureExtractor, WhisperModel
 
 from dataclasses import dataclass
 import time
+import math
 from typing import Optional, Callable, Dict, Any
 
 @dataclass
@@ -641,7 +642,7 @@ class SeedVCWrapper:
         infer_start = time.time()
         processed_frames = 0
         chunk_idx = 0
-        est_chunks = max(total_frames // 2048, 1)  # heuristic if you use 2k frame chunks
+        est_chunks = math.ceil(total_frames / (max_source_window - self.overlap_frame_len))
 
         _dt = _device_type()
         _dtype = _amp_dtype()

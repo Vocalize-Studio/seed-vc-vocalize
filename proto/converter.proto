@@ -63,6 +63,10 @@ message Error {
   string where = 3; // "svc"
 }
 
+message Heartbeat {
+  google.protobuf.Timestamp ts = 1;
+}
+
 message ConvertEvent {
   string job_id = 10;
   oneof event {
@@ -70,10 +74,20 @@ message ConvertEvent {
     AudioChunk chunk = 2;
     Done done = 3;
     Error error = 4;
+    Heartbeat heartbeat = 5; // New heartbeat event
   }
+}
+
+message DownloadRequest {
+  string job_id = 1;
+}
+
+message DownloadChunk {
+  bytes data = 1;
 }
 
 service Converter {
   rpc Convert(ConvertRequest) returns (stream ConvertEvent);
   rpc Cancel(JobId) returns (google.protobuf.Empty);
+  rpc Download(DownloadRequest) returns (stream DownloadChunk); // New RPC
 }

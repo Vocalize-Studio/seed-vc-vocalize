@@ -7,11 +7,23 @@ from proto import converter_pb2_grpc as api
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.empty_pb2 import Empty
 import base64
+import os
+import aiofiles
+from minio import Minio
+from minio.error import S3Error
 
 RMQ_URL = "amqp://guest:guest@localhost/"
 EVENTS_EX = "conversion.events"
 SVC_QUEUE = "svc.jobs"
 CTRL_QUEUE = "conversion.control"
+
+# MinIO Configuration (matching worker for simplicity)
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "False").lower() in ('true', '1', 't')
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "svc-jobs")
+MINIO_PREFIX = os.getenv("MINIO_PREFIX", "jobs")
 
 def ts_now():
     t = Timestamp()
@@ -161,6 +173,46 @@ class ConverterServicer(api.ConverterServicer):
             ),
             routing_key=CTRL_QUEUE,
         )
+
+    async def Download(self, request, context):
+        job_id = request.job_id
+        object_key = f"{MINIO_PREFIX}/{job_id}/converted.wav"
+        
+        try:
+            minio_client = Minio(
+                MINIO_ENDPOINT,
+                access_key=MINIO_ACCESS_KEY,
+                secret_key=MINIO_SECRET_KEY,
+                secure=MINIO_SECURE
+            )
+            
+            # Check if object exists
+            try:
+                minio_client.stat_object(MINIO_BUCKET, object_key)
+            except S3Error as e:
+                if e.code == "NoSuchKey":
+                    context.set_details(f"File for job_id {job_id} not found.")
+                    context.set_code(grpc.StatusCode.NOT_FOUND)
+                    return # End RPC
+                else:
+                    raise # Re-raise other S3 errors
+
+            # Stream the file content
+            response = minio_client.get_object(MINIO_BUCKET, object_key)
+            try:
+                while True:
+                    chunk = response.read(4096) # Read in 4KB chunks
+                    if not chunk:
+                        break
+                    yield pb.DownloadChunk(data=chunk)
+            finally:
+                response.close()
+                response.release_conn()
+
+        except Exception as e:
+            context.set_details(f"Failed to download file for job_id {job_id}: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            return # End RPC
 
 async def serve():
     server = grpc.aio.server()
