@@ -60,17 +60,22 @@ services:
     networks: [vocalize-net]
 
   pgadmin:
-    image: dpage/pgadmin4:latest   # latest pgAdmin4
+    image: dpage/pgadmin4:latest
     container_name: svc-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
-      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
-      PGADMIN_CONFIG_LOGIN_BANNER: "Authorized users only"
+      # Booleans must be Python True/False (no quotes)
+      # PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: True
+      # Strings must be quoted *inside* the value so pgAdmin writes valid Python
+      # PGADMIN_CONFIG_LOGIN_BANNER: "'Authorized users only'"
+      # Optional: keep logs quieter (string -> quote inside)
+      PGADMIN_CONFIG_CONSOLE_LOG_LEVEL: "'WARNING'"
     ports:
       - "127.0.0.1:5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     depends_on:
       - postgres
     restart: unless-stopped
