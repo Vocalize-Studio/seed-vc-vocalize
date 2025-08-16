@@ -106,7 +106,8 @@ class SeedVCWrapper:
         def semantic_fn(waves_16k):
             ori_inputs = self.whisper_feature_extractor([waves_16k.squeeze(0).cpu().numpy()],
                                                    return_tensors="pt",
-                                                   return_attention_mask=True)
+                                                   return_attention_mask=True,
+                                                   sampling_rate=16000)
             ori_input_features = self.whisper_model._mask_input_features(
                 ori_inputs.input_features, attention_mask=ori_inputs.attention_mask).to(self.device)
             with torch.no_grad():
@@ -488,7 +489,7 @@ class SeedVCWrapper:
             prog = Progress(pct=_clamp01(pct), status=status, eta_sec=eta_sec, meta=meta or {})
 
             # Heartbeat throttle for very tight loops
-            if progress_cb and (now - last_beat >= progress_heartbeat_s or prog.pct >= 0.999):
+            if progress_cb: # Temporarily remove throttle for debugging
                 last_beat = now
                 try:
                     progress_cb(prog)
@@ -502,6 +503,9 @@ class SeedVCWrapper:
 
         # ---- start -----------------------------------------------------------
         _emit(0.01, "Starting…")
+
+        if progress_cb:
+            progress_cb(Progress(pct=0.03, status="Loading models…", eta_sec=None, meta={}))
 
         # PREP PHASE ───────────────────────────────────────────────────────────
         prep_start = time.time()

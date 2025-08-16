@@ -69,6 +69,30 @@ class ConverterServicer(api.ConverterServicer):
             routing_key=SVC_QUEUE,
         )
 
+        # 1) Immediately tell the client we accepted/queued the job
+        yield pb.ConvertEvent(
+            job_id=job_id,
+            progress=pb.Progress(
+                pct=0.0,
+                status="Queued",
+                eta_sec=0.0,
+                stage="svc",
+                seq=0,
+                ts=ts_now(),
+            ),
+        )
+        yield pb.ConvertEvent(
+            job_id=job_id,
+            progress=pb.Progress(
+                pct=0.01,
+                status="Dispatched to worker…",
+                eta_sec=0.0,
+                stage="svc",
+                seq=1,
+                ts=ts_now(),
+            ),
+        )
+
         # Forward events to client
         async with ev_q.iterator() as it:
             async for msg in it:

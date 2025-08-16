@@ -27,3 +27,4 @@ runs/
 /garbages/
 /flagged/
 /experimental/
+.env
