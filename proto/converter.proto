@@ -1,0 +1,79 @@
+syntax = "proto3";
+package vc.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+message ConvertRequest {
+  // Inputs as URIs: file://, minio://, s3://, https:// (presigned), etc.
+  string source_uri = 1;
+  string target_uri = 2;
+
+  // Core params (server can clamp defaults)
+  int32 diffusion_steps = 10;    // default if 0
+  float length_adjust = 11;      // default 1.0 if 0
+  float inference_cfg_rate = 12; // default 0.7 if 0
+  optional bool auto_f0_adjust = 13;      // default true
+  int32 pitch_shift = 14;        // semitones
+
+  // Optional metadata
+  string tenant_id = 20;
+  string request_id = 21;
+}
+
+message JobId { string id = 1; }
+
+message Progress {
+  double pct = 1;               // 0..1 (stage-local; here stage="svc")
+  string status = 2;            // e.g., "Starting…", "Converting 5/18"
+  double eta_sec = 3;           // 0 or missing if unknown
+  map<string, string> meta = 4; // fps_ema, processed_frames, etc.
+  string stage = 5;             // "svc"
+  int64 seq = 6;                // strictly increasing per job
+  google.protobuf.Timestamp ts = 7;
+}
+
+message AudioChunk {
+  bytes mp3 = 1; // optional if you choose to stream audio bytes
+  int64 seq = 2;
+  bool is_final = 3;
+  int32 sr = 4; // e.g., 44100
+}
+
+message Done {
+  string audio_uri = 1; // final artifact location (e.g., minio://...)
+  int32 sr = 2;
+  int64 samples = 3;
+  map<string, string> timings =
+      4; // "prep_s":"6.1","infer_s":"8.4","final_s":"0.9"
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  INVALID_INPUT = 1;
+  NOT_FOUND = 2;
+  INTERNAL = 3;
+  CANCELLED = 4;
+  RESOURCE_EXHAUSTED = 5;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+  string where = 3; // "svc"
+}
+
+message ConvertEvent {
+  string job_id = 10;
+  oneof event {
+    Progress progress = 1;
+    AudioChunk chunk = 2;
+    Done done = 3;
+    Error error = 4;
+  }
+}
+
+service Converter {
+  rpc Convert(ConvertRequest) returns (stream ConvertEvent);
+  rpc Cancel(JobId) returns (google.protobuf.Empty);
+}
