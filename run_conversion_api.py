@@ -1,7 +1,8 @@
 import os
 import torch
 import soundfile as sf
-from seed_svc_wrapper import SeedVCWrapper
+from seed_svc_wrapper import SeedVCWrapper, Progress
+from tqdm import tqdm
 
 def main():
     # Initialize the SeedVCWrapper
@@ -23,10 +24,25 @@ def main():
     stream_output = False # Set to True if you want to stream output
 
     # Run the conversion
-    print("Starting voice conversion...")
-    # If stream_output is True, this will be a generator
-    # For simplicity, I'm assuming stream_output is False for direct return
-    output_audio_np = vc_wrapper.convert_voice(
+    print("Starting voice conversion (streaming)...")
+    os.makedirs("./output", exist_ok=True)
+
+    final_sr, final_wave = None, None
+    
+    pbar = tqdm(total=100, desc="Overall", unit="%")
+
+    def on_progress(progress: 'Progress'):
+        # p in [0,1]
+        new_val = int(round(progress.pct * 100))
+        if new_val > pbar.n:
+            pbar.update(new_val - pbar.n)
+        pbar.set_description(f"Overall ({progress.status})")
+        if progress.eta_sec is not None:
+            pbar.set_postfix_str(f"ETA: {int(progress.eta_sec)}s")
+        else:
+            pbar.set_postfix_str("")
+
+    for mp3_bytes, maybe_full in vc_wrapper.convert_voice_stream(
         source=source_audio_path,
         target=reference_audio_path,
         diffusion_steps=diffusion_steps,
@@ -34,21 +50,21 @@ def main():
         inference_cfg_rate=inference_cfg_rate,
         auto_f0_adjust=auto_f0_adjust,
         pitch_shift=pitch_shift,
-        stream_output=stream_output
-    )
+        progress_cb=on_progress,
+        progress_heartbeat_s=0.1,
+    ):
+        # send mp3_bytes to client if needed
+        if maybe_full is not None:
+            final_sr, final_wave = maybe_full
 
-    # Save the output audio (if not streaming)
-    if not stream_output:
-        output_filename = "./output/converted_audio.wav"
-        # Ensure the output directory exists
-        os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-        # Assuming the output_audio_np is a numpy array and sr is available from the wrapper
-        current_sr = vc_wrapper.sr
-        print(f"Shape of output_audio_np: {output_audio_np.shape}")
-        sf.write(output_filename, output_audio_np, current_sr)
-        print(f"\nConversion complete! Output audio saved to: {output_filename}")
+    pbar.close()
+
+    if final_wave is not None:
+        out_path = "./output/converted_audio.wav"
+        sf.write(out_path, final_wave.squeeze(-1), final_sr)
+        print(f"Conversion complete! Output saved to {out_path}")
     else:
-        print("\nConversion complete! Output was streamed.")
+        print("Conversion complete! (streamed only)")
 
 
 if __name__ == "__main__":
