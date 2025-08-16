@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management   # RabbitMQ 4 with management UI
+    container_name: svc-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "127.0.0.1:5673:5672"   # external:internal
+      - "127.0.0.1:15672:15672" # management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks: [vocalize-net]
+
+  minio:
+    image: minio/minio:latest
+    container_name: svc-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks: [vocalize-net]
+
+  postgres:
+    image: postgres:17   # latest stable PostgreSQL
+    container_name: svc-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vocalize}
+      POSTGRES_USER: ${POSTGRES_USER:-vocalize}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vocalize} -d ${POSTGRES_DB:-vocalize} -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [vocalize-net]
+
+  pgadmin:
+    image: dpage/pgadmin4:latest   # latest pgAdmin4
+    container_name: svc-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+      PGADMIN_CONFIG_LOGIN_BANNER: "Authorized users only"
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks: [vocalize-net]
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  minio_data:
+  rabbitmq_data:
+
+networks:
+  vocalize-net:
+    driver: bridge
+
