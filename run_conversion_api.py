@@ -19,7 +19,7 @@ def main():
     diffusion_steps = 50
     length_adjust = 1.0
     inference_cfg_rate = 0.7
-    auto_f0_adjust = True
+    auto_f0_adjust = False
     pitch_shift = 1
     stream_output = False # Set to True if you want to stream output
 

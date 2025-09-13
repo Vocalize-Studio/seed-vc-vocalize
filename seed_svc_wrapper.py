@@ -228,7 +228,7 @@ class SeedVCWrapper:
     
     @torch.inference_mode()
     def convert_voice(self, source, target, diffusion_steps=10, length_adjust=1.0,
-                    inference_cfg_rate=0.7, auto_f0_adjust=True,
+                    inference_cfg_rate=0.7, auto_f0_adjust=False,
                     pitch_shift=0, stream_output=False):
         """
         Convert both timbre and voice from source to target.
@@ -446,7 +446,7 @@ class SeedVCWrapper:
         diffusion_steps=10,
         length_adjust=1.0,
         inference_cfg_rate=0.7,
-        auto_f0_adjust=True,
+        auto_f0_adjust=False,
         pitch_shift=0,
         progress_cb: Optional[Callable[[Progress], None]] = None,
         progress_weights: Optional[Dict[str, float]] = None,

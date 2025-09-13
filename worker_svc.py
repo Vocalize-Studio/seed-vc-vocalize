@@ -472,7 +472,7 @@ class SVCWorker:
                 diffusion_steps=p.get("diffusion_steps", 30),
                 length_adjust=p.get("length_adjust", 1.0),
                 inference_cfg_rate=p.get("inference_cfg_rate", 0.7),
-                auto_f0_adjust=p.get("auto_f0_adjust", True),
+                auto_f0_adjust=p.get("auto_f0_adjust", False),
                 pitch_shift=p.get("pitch_shift", 0),
                 progress_cb=progress_cb_threadsafe,
                 progress_weights={"prep": 0.20, "infer": 0.75, "final": 0.05},
