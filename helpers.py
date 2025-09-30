@@ -25,11 +25,15 @@ def resolve_to_local(uri: str) -> str:
     """
     if uri.startswith("file://"):
         return uri[len("file://"):]
-    if uri.startswith("minio://"):
-        # TODO: download from MinIO to a temp path, return that path
+    if uri.startswith("s3://"):
+        # TODO: download from S3 to a temp path, return that path
         tmp = os.path.join(tempfile.gettempdir(), f"job-{uuid.uuid4().hex}-{os.path.basename(uri)}")
-        # minio_download(uri, tmp)  # implement
+        # s3_download(uri, tmp)  # implement
         return tmp
     # Assume plain filesystem path
     return uri
+
+i
+
+i
 

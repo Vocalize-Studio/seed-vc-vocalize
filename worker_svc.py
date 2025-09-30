@@ -120,8 +120,8 @@ def ensure_bucket_exists():
     cli = get_minio()
     found = cli.bucket_exists(MINIO_BUCKET)
     if not found:
-        logger.info("Creating MinIO bucket '{}'", MINIO_BUCKET)
-        cli.make_bucket(MINIO_BUCKET, location=MINIO_REGION)
+            logger.info("Creating S3 bucket '{}'", S3_BUCKET)
+        cli.make_bucket(MINIO_BUCKET)
 
 def object_key_for_job(job_id: str, ext: str = "wav") -> str:
     # jobs/<job_id>/converted.<ext>
@@ -521,8 +521,7 @@ class SVCWorker:
                 )
             return
 
-        # ---------- continue with your MinIO upload & done event ----------
-        logger.info("📤 Uploading to MinIO …")
+        logger.info("📤 Uploading to S3 …")
         audio_path = os.path.join(OUTPUT_DIR, f"{job_id}_converted.wav")
         sr, wave = last_full if last_full is not None else (44100, None)
         if wave is None:
@@ -539,7 +538,7 @@ class SVCWorker:
                 )
         else:
             write_final_wave(audio_path, int(sr), wave)
-            audio_uri = upload_file_to_minio(audio_path, job_id, content_type="audio/wav")
+            audio_uri = upload_file_to_s3(audio_path, job_id, content_type="audio/wav")
             async with db_pool.acquire() as db_conn:
                 await db_conn.execute(
                     """
@@ -553,9 +552,9 @@ class SVCWorker:
                     uuid.UUID(job_id), audio_uri
                 )
 
-        # 4) DONE (send MinIO URI)
+        # 4) DONE (send S3 URI)
         await self._publish(ex, job_id, "done", {
-            "path": audio_uri,  # server maps 'path' → Done.audio_uri; this can be minio://… or JSON with presigned URL
+            "path": audio_uri,  # server maps 'path' → Done.audio_uri; this can be s3://… or JSON with presigned URL
             "sr": int(sr),
             "samples": int(wave.shape[0]) if wave is not None else 0,
             "timings": last_timings or {},
@@ -580,3 +579,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         # already handled by signal; just ensure close happens
         pass
+ignal; just ensure close happens
+        pass
+ensure close happens
+        pass
+     pass

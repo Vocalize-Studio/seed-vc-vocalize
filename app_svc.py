@@ -108,7 +108,8 @@ def load_models(args):
         def semantic_fn(waves_16k):
             ori_inputs = whisper_feature_extractor([waves_16k.squeeze(0).cpu().numpy()],
                                                    return_tensors="pt",
-                                                   return_attention_mask=True)
+                                                   return_attention_mask=True,
+                                                   sampling_rate=16000)
             ori_input_features = whisper_model._mask_input_features(
                 ori_inputs.input_features, attention_mask=ori_inputs.attention_mask).to(device)
             with torch.no_grad():
@@ -286,8 +287,7 @@ def voice_conversion(source, target, diffusion_steps, length_adjust, inference_c
 
     feat2 = torchaudio.compliance.kaldi.fbank(ref_waves_16k,
                                               num_mel_bins=80,
-                                              dither=0,
-                                              sample_frequency=16000)
+                                              dither=0)
     feat2 = feat2 - feat2.mean(dim=0, keepdim=True)
     style2 = campplus_model(feat2.unsqueeze(0))
 

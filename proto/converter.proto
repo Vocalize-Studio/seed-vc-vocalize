@@ -41,7 +41,7 @@ message AudioChunk {
 }
 
 message Done {
-  string audio_uri = 1; // final artifact location (e.g., minio://...)
+  string audio_uri = 1; // final artifact location (e.g., s3://...)
   int32 sr = 2;
   int64 samples = 3;
   map<string, string> timings =

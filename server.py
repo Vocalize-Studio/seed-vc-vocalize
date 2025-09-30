@@ -217,18 +217,19 @@ class ConverterServicer(api.ConverterServicer):
         object_key = f"{MINIO_PREFIX}/{job_id}/converted.wav"
         
         try:
-            minio_client = Minio(
-                MINIO_ENDPOINT,
-                access_key=MINIO_ACCESS_KEY,
-                secret_key=MINIO_SECRET_KEY,
-                secure=MINIO_SECURE
+            s3_client = boto3.client(
+                "s3",
+                region_name=S3_REGION,
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                use_ssl=S3_USE_SSL
             )
             
             # Check if object exists
             try:
-                minio_client.stat_object(MINIO_BUCKET, object_key)
-            except S3Error as e:
-                if e.code == "NoSuchKey":
+                s3_client.head_object(Bucket=S3_BUCKET, Key=object_key)
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "404":
                     context.set_details(f"File for job_id {job_id} not found.")
                     context.set_code(grpc.StatusCode.NOT_FOUND)
                     return # End RPC
@@ -236,16 +237,15 @@ class ConverterServicer(api.ConverterServicer):
                     raise # Re-raise other S3 errors
 
             # Stream the file content
-            response = minio_client.get_object(MINIO_BUCKET, object_key)
+            response = s3_client.get_object(Bucket=S3_BUCKET, Key=object_key)
             try:
                 while True:
-                    chunk = response.read(4096) # Read in 4KB chunks
+                    chunk = response["Body"].read(4096) # Read in 4KB chunks
                     if not chunk:
                         break
                     yield pb.DownloadChunk(data=chunk)
             finally:
-                response.close()
-                response.release_conn()
+                response["Body"].close()
 
         except Exception as e:
             context.set_details(f"Failed to download file for job_id {job_id}: {e}")
