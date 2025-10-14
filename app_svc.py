@@ -22,7 +22,7 @@ def load_models(args):
     # f0 conditioned model
     if args.checkpoint is None or args.checkpoint == "":
         dit_checkpoint_path, dit_config_path = load_custom_model_from_hf("WeirdhostRnD/seed-star-v1.5",
-                                                                         "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth",
+                                                                         "DiT_epoch_00002_step_15000_star15.pth",
                                                                          "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml")
     else:
         print(f"Using custom checkpoint: {args.checkpoint}")
